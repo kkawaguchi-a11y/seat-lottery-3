@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>席次くじ引き</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700;900&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<style>
+  :root{--bg:#f5f7f5;--panel:#fff;--border:#d0e0d0;--green:#2e7d32;--green2:#43a047;--green3:#e8f5e9;--red:#c62828;--muted:#757575;--text:#212121;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'Zen Maru Gothic',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:28px 16px 56px;}
+  header{text-align:center;margin-bottom:24px;}
+  h1{font-size:clamp(24px,6vw,38px);font-weight:900;letter-spacing:0.12em;color:var(--green);}
+  h1::before,h1::after{content:'🌿';font-size:0.5em;vertical-align:middle;margin:0 8px;}
+  .subtitle{font-size:12px;color:var(--muted);margin-top:8px;}
+  .sync{display:flex;align-items:center;justify-content:center;gap:8px;font-size:11px;color:var(--muted);margin-top:8px;}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);}
+  .dot.on{background:var(--green);box-shadow:0 0 6px var(--green2);}
+  .dot.off{background:var(--red);}
+  .wrap{width:100%;max-width:640px;display:flex;flex-direction:column;gap:18px;}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.06);}
+  .step{display:flex;align-items:center;font-size:14px;font-weight:700;margin-bottom:14px;}
+  .badge{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--green);color:#fff;font-size:12px;margin-right:8px;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;}
+  .chip{padding:10px 6px;background:#f9fbe7;border:1px solid var(--border);border-radius:12px;text-align:center;cursor:pointer;transition:.18s;user-select:none;}
+  .chip:hover:not(.done):not(.me){border-color:var(--green2);background:var(--green3);transform:translateY(-2px);}
+  .chip.me{background:var(--green3);border-color:var(--green);box-shadow:0 0 10px rgba(46,125,50,.25);}
+  .chip.done{background:var(--green3);border-color:#81c784;cursor:default;}
+  .cname{font-size:15px;font-weight:700;}
+  .chip.done .cname{color:var(--green);font-size:13px;}
+  .csub{font-size:10px;color:var(--muted);margin-top:3px;}
+  .chip.done .csub{color:var(--green);font-weight:700;}
+  .stage{display:flex;flex-direction:column;align-items:center;gap:16px;}
+  .who{font-size:14px;color:var(--muted);text-align:center;}
+  .who strong{color:var(--green);font-size:20px;font-weight:900;}
+  .slots{display:flex;gap:14px;align-items:center;justify-content:center;flex-wrap:wrap;}
+  .slot{background:var(--bg);border:2px solid var(--border);border-radius:12px;width:120px;height:76px;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .slot.active{border-color:var(--green);background:var(--green3);}
+  .slabel{font-size:9px;letter-spacing:3px;color:var(--muted);margin-bottom:4px;}
+  .sval{font-size:22px;font-weight:900;min-height:30px;display:flex;align-items:center;}
+  .slot.active .sval{color:var(--green);}
+  .prog{width:100%;max-width:360px;height:6px;background:var(--border);border-radius:3px;overflow:hidden;}
+  .pbar{height:100%;background:linear-gradient(90deg,var(--green2),var(--green));transition:width .5s;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
+  .btn{font-family:inherit;font-size:13px;font-weight:700;border:none;border-radius:12px;padding:13px 26px;cursor:pointer;transition:.2s;}
+  .btn-p{background:var(--green);color:#fff;}
+  .btn-p:hover:not(:disabled){background:var(--green2);transform:translateY(-2px);}
+  .btn-p:disabled{opacity:.35;cursor:not-allowed;}
+  .btn-w{background:transparent;color:var(--green2);border:2px solid var(--green2);}
+  .btn-w:disabled{opacity:.3;cursor:not-allowed;}
+  .btn-d{background:transparent;color:var(--red);border:2px solid #ef9a9a;}
+  .status{font-size:12px;color:var(--muted);}
+  table{width:100%;border-collapse:collapse;}
+  th{font-size:11px;color:var(--green2);padding:7px 10px;text-align:left;border-bottom:1px solid var(--border);}
+  td{padding:8px 10px;border-bottom:1px solid #f0f0f0;font-size:15px;}
+  tr:last-child td{border-bottom:none;}
+  td.seat{color:var(--green);font-weight:900;width:90px;}
+  .ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:998;opacity:0;pointer-events:none;transition:.3s;}
+  .ov.show{opacity:1;pointer-events:all;}
+  .card{background:#fff;border:2px solid var(--green);border-radius:20px;padding:34px 48px;text-align:center;transform:scale(.9);transition:.3s;max-width:90vw;}
+  .ov.show .card{transform:scale(1);}
+  .rname{font-size:26px;font-weight:900;}
+  .rseat{font-size:64px;font-weight:900;color:var(--green);}
+  .rlabel{font-size:12px;color:var(--muted);letter-spacing:3px;}
+  .close{margin-top:22px;font-family:inherit;background:transparent;border:2px solid var(--border);color:var(--muted);padding:8px 20px;border-radius:10px;cursor:pointer;}
+  .cf{position:fixed;inset:0;pointer-events:none;z-index:999;overflow:hidden;}
+  .cp{position:absolute;width:8px;height:8px;top:-20px;border-radius:50%;animation:fall linear forwards;}
+  @keyframes fall{to{top:110vh;opacity:0;transform:rotate(720deg) translateX(var(--d));}}
+  @keyframes tick{0%{transform:translateY(0);opacity:1}40%{transform:translateY(-6px);opacity:0}100%{transform:translateY(0);opacity:1}}
+  .spin .sval{animation:tick .1s ease-in-out;}
+</style>
+</head>
+<body>
+<header>
+  <h1>席次くじ引き</h1>
+  <div class="subtitle">12名 / 席番号 1〜12 ・ 毎日夜0時にリセット</div>
+  <div class="sync"><div class="dot" id="dot"></div><span id="syncLabel">接続中...</span></div>
+</header>
+<div class="wrap">
+  <div class="panel">
+    <div class="step"><span class="badge">1</span>自分の名前を選んでください</div>
+    <div class="grid" id="grid"></div>
+  </div>
+  <div class="panel">
+    <div class="step"><span class="badge">2</span>くじを引く</div>
+    <div class="stage">
+      <div class="who" id="who">名前を選択してください</div>
+      <div class="slots">
+        <div class="slot" id="slotM"><div class="slabel">MEMBER</div><div class="sval" id="valM">—</div></div>
+        <div class="slot" id="slotS"><div class="slabel">SEAT</div><div class="sval" id="valS">—</div></div>
+      </div>
+      <div class="prog"><div class="pbar" id="pbar" style="width:0%"></div></div>
+      <div class="row">
+        <button class="btn btn-p" id="drawBtn" onclick="draw()" disabled>🎋 くじを引く</button>
+        <button class="btn btn-w" id="undoBtn" onclick="undo()" disabled>↩ 1つ戻す</button>
+        <button class="btn btn-d" onclick="resetAll()">↺ 全リセット</button>
+      </div>
+      <div class="status" id="status">0 / 12 完了</div>
+    </div>
+  </div>
+  <div class="panel" id="resPanel" style="display:none">
+    <div class="step">席次一覧</div>
+    <table><thead><tr><th>席</th><th>メンバー</th></tr></thead><tbody id="resBody"></tbody></table>
+  </div>
+</div>
+<div class="ov" id="ov">
+  <div class="card">
+    <div class="rlabel">✨ RESULT ✨</div>
+    <div class="rname" id="rName">—</div>
+    <div style="font-size:18px;color:var(--green2);margin:6px 0">▼</div>
+    <div class="rseat" id="rSeat">—</div>
+    <div class="rlabel">SEAT No.</div>
+    <button class="close" onclick="document.getElementById('ov').classList.remove('show')">閉じる ✕</button>
+  </div>
+</div>
+<div class="cf" id="cf"></div>
+<script>
+firebase.initializeApp({
+  apiKey:"AIzaSyAuYuZJw5y1CIRAV9XENioRE7qHPw-gSS4",
+  authDomain:"seat-lottery-13d7c.firebaseapp.com",
+  databaseURL:"https://seat-lottery-13d7c-default-rtdb.firebaseio.com",
+  projectId:"seat-lottery-13d7c",
+  storageBucket:"seat-lottery-13d7c.firebasestorage.app",
+  messagingSenderId:"368958433017",
+  appId:"1:368958433017:web:5fc9594a964a03ff7a2428"
+});
+const db=firebase.database();
+const ROOT=db.ref('lottery12');
+
+const MEMBERS=['谷','渡辺','猪久保','田村','石原','塚原','小堀','宮下','前川','山澤','上池','元澤'];
+const SEATS=[1,2,3,4,5,6,7,8,9,10,11,12];
+const RESET_HOUR=0; // 毎日夜0時にリセット
+
+let me=null, busy=false, assignments={};
+
+// 日付キー（0時を過ぎると別のキーになる）
+function periodKey(){
+  const d=new Date(Date.now()-RESET_HOUR*3600*1000);
+  return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
+}
+// 期間が変わっていたらリセット（誰かが開いた瞬間に実行）
+function ensureFresh(){
+  const key=periodKey();
+  return ROOT.transaction(function(cur){
+    cur=cur||{};
+    if(cur.resetKey===key)return;
+    return {resetKey:key};
+  });
+}
+
+ROOT.on('value',function(snap){
+  const d=snap.val()||{};
+  assignments=d.assignments||{};
+  if(d.resetKey!==periodKey())ensureFresh();
+  render();
+});
+db.ref('.info/connected').on('value',function(s){
+  const on=s.val();
+  document.getElementById('dot').className='dot '+(on?'on':'off');
+  document.getElementById('syncLabel').textContent=on?'リアルタイム同期中':'オフライン';
+});
+setInterval(ensureFresh,60000);
+document.addEventListener('visibilitychange',function(){if(!document.hidden)ensureFresh();});
+
+function isDone(m){return m in assignments;}
+function pick(m){
+  if(busy||isDone(m))return;
+  me=(me===m)?null:m;
+  render();
+}
+
+async function draw(){
+  if(!me||busy||isDone(me))return;
+  busy=true;
+  const name=me;
+  render();
+  const slotM=document.getElementById('slotM'),slotS=document.getElementById('slotS');
+  slotM.classList.add('active');slotS.classList.add('active');
+  document.getElementById('valM').textContent=name+'さん';
+
+  // 席の確定はトランザクションで安全に行う（重複しない）
+  const tx=ROOT.child('assignments').transaction(function(cur){
+    cur=cur||{};
+    if(cur[name])return cur;
+    const used=new Set(Object.keys(cur).map(function(k){return cur[k].seat;}));
+    const avail=SEATS.filter(function(s){return !used.has(s);});
+    if(!avail.length)return;
+    cur[name]={seat:avail[Math.floor(Math.random()*avail.length)],t:Date.now()};
+    return cur;
+  });
+
+  const valS=document.getElementById('valS');
+  for(let i=0;i<18;i++){
+    slotS.classList.add('spin');
+    valS.textContent=SEATS[Math.floor(Math.random()*SEATS.length)];
+    await sleep(55+i*5);
+    slotS.classList.remove('spin');
+  }
+  const res=await tx;
+  slotM.classList.remove('active');slotS.classList.remove('active');
+  const val=res.snapshot.val();
+  if(!res.committed||!val||!val[name]){
+    alert('くじを引けませんでした。もう一度お試しください。');
+    busy=false;render();return;
+  }
+  const seat=val[name].seat;
+  valS.textContent=seat;
+  busy=false;me=null;
+  document.getElementById('rName').textContent=name+'さん';
+  document.getElementById('rSeat').textContent=seat;
+  document.getElementById('ov').classList.add('show');
+  if(Object.keys(val).length===MEMBERS.length)setTimeout(confetti,500);
+}
+
+async function undo(){
+  const entries=Object.entries(assignments);
+  if(!entries.length)return;
+  entries.sort(function(a,b){return b[1].t-a[1].t;});
+  const last=entries[0][0];
+  if(!confirm(last+'さんの結果を取り消しますか？'))return;
+  await ROOT.child('assignments/'+last).remove();
+  resetSlots();
+}
+
+async function resetAll(){
+  if(!confirm('全ての結果をリセットしますか？\n全員の画面がリセットされます。'))return;
+  await ROOT.set({resetKey:periodKey()});
+  me=null;busy=false;resetSlots();
+}
+
+function resetSlots(){
+  document.getElementById('valM').textContent='—';
+  document.getElementById('valS').textContent='—';
+}
+
+function render(){
+  const g=document.getElementById('grid');
+  g.innerHTML='';
+  MEMBERS.forEach(function(m){
+    const d=document.createElement('div');
+    const done=isDone(m),isMe=me===m;
+    d.className='chip'+(done?' done':isMe?' me':'');
+    if(done){
+      d.innerHTML='<div class="cname">✓ '+m+'さん</div><div class="csub">No.'+assignments[m].seat+'</div>';
+    }else{
+      d.innerHTML='<div class="cname">'+m+'さん</div><div class="csub">'+(isMe?'選択中 ✨':'タップして選択')+'</div>';
+      d.addEventListener('click',function(){pick(m);});
+    }
+    g.appendChild(d);
+  });
+  document.getElementById('who').innerHTML=me?'<strong>'+me+'さん</strong> のくじ 🎋':'名前を選択してください';
+  document.getElementById('drawBtn').disabled=!(me&&!busy&&!isDone(me));
+  document.getElementById('undoBtn').disabled=busy||Object.keys(assignments).length===0;
+
+  const entries=Object.entries(assignments).sort(function(a,b){return a[1].seat-b[1].seat;});
+  const tb=document.getElementById('resBody');
+  tb.innerHTML='';
+  entries.forEach(function(e){
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td class="seat">No.'+e[1].seat+'</td><td>'+e[0]+'さん</td>';
+    tb.appendChild(tr);
+  });
+  document.getElementById('resPanel').style.display=entries.length?'':'none';
+
+  const n=entries.length;
+  document.getElementById('pbar').style.width=(n/MEMBERS.length*100)+'%';
+  document.getElementById('status').textContent=n+' / '+MEMBERS.length+' 完了 🌿';
+}
+
+function confetti(){
+  const c=document.getElementById('cf');
+  const cols=['#2e7d32','#43a047','#81c784','#a5d6a7','#1b5e20','#ffd54f'];
+  for(let i=0;i<70;i++){
+    const p=document.createElement('div');p.className='cp';
+    p.style.cssText='left:'+Math.random()*100+'vw;background:'+cols[i%cols.length]+';animation-duration:'+(1.6+Math.random()*2)+'s;animation-delay:'+Math.random()*0.8+'s;--d:'+(Math.random()*220-110)+'px';
+    c.appendChild(p);setTimeout(function(){p.remove();},4500);
+  }
+}
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
+ensureFresh();
+render();
+</script>
+</body>
+</html>
